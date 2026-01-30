@@ -1,0 +1,32 @@
+"""Tests for tool definitions."""
+
+from __future__ import annotations
+
+from app.tools.definitions import TOOL_DEFINITIONS
+
+
+class TestToolDefinitions:
+    def test_all_tools_have_required_fields(self) -> None:
+        for tool in TOOL_DEFINITIONS:
+            assert "name" in tool
+            assert "description" in tool
+            assert "input_schema" in tool
+            assert tool["input_schema"]["type"] == "object"
+
+    def test_expected_tools_exist(self) -> None:
+        names = {t["name"] for t in TOOL_DEFINITIONS}
+        assert "create_object" in names
+        assert "modify_object" in names
+        assert "remove_object" in names
+        assert "set_environment" in names
+        assert "create_terrain" in names
+        assert "narrate" in names
+
+    def test_create_object_has_geometry_required(self) -> None:
+        create_tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "create_object")
+        assert "geometry" in create_tool["input_schema"]["required"]
+        assert "name" in create_tool["input_schema"]["required"]
+
+    def test_narrate_has_text_required(self) -> None:
+        narrate_tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "narrate")
+        assert "text" in narrate_tool["input_schema"]["required"]
