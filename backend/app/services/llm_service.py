@@ -1,11 +1,12 @@
-"""LLM service - interfaces with Claude API to generate world content."""
+"""LLM service - interfaces with OpenAI API to generate world content."""
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
-import anthropic
+import openai
 
 from app.config import config
 from app.services.world_state import WorldStateManager
@@ -39,19 +40,15 @@ Position guide: The user starts at (0, 1.6, 0). Y=0 is ground level. Spread obje
 
 
 class LLMService:
-    """Handles communication with the Claude API for world generation."""
+    """Handles communication with the OpenAI API for world generation."""
 
     def __init__(self, world_state: WorldStateManager) -> None:
-        self._client = anthropic.Anthropic(api_key=config.llm.api_key)
+        self._client = openai.OpenAI(api_key=config.llm.api_key)
         self._world_state = world_state
         self._conversation_history: list[dict[str, Any]] = []
 
     async def process_user_input(self, user_text: str) -> list[dict[str, Any]]:
-        """Process user input and return a list of world actions.
-
-        Returns a list of dicts with 'type' and 'data' keys representing
-        actions to apply to the world.
-        """
+        """Process user input and return a list of world actions."""
         context = self._world_state.get_context_summary()
 
         user_message = f"[Current World State]\n{context}\n\n[User says]: {user_text}"
@@ -67,56 +64,60 @@ class LLMService:
         actions: list[dict[str, Any]] = []
 
         try:
-            response = self._client.messages.create(
+            messages: list[dict[str, Any]] = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                *self._conversation_history,
+            ]
+
+            response = self._client.chat.completions.create(
                 model=config.llm.model,
                 max_tokens=config.llm.max_tokens,
                 temperature=config.llm.temperature,
-                system=SYSTEM_PROMPT,
                 tools=TOOL_DEFINITIONS,  # type: ignore[arg-type]
-                messages=self._conversation_history,  # type: ignore[arg-type]
+                messages=messages,  # type: ignore[arg-type]
             )
 
-            # Process the response - may have multiple tool uses
-            assistant_content: list[dict[str, Any]] = []
-            tool_results: list[dict[str, Any]] = []
+            choice = response.choices[0]
+            message = choice.message
 
-            for block in response.content:
-                if block.type == "text":
-                    assistant_content.append({"type": "text", "text": block.text})
-                elif block.type == "tool_use":
-                    assistant_content.append({
-                        "type": "tool_use",
-                        "id": block.id,
-                        "name": block.name,
-                        "input": block.input,
-                    })
-                    action = self._execute_tool(block.name, block.input)
+            # Build assistant message for history
+            assistant_msg: dict[str, Any] = {"role": "assistant", "content": message.content}
+            if message.tool_calls:
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,  # type: ignore[union-attr]
+                            "arguments": tc.function.arguments,  # type: ignore[union-attr]
+                        },
+                    }
+                    for tc in message.tool_calls
+                ]
+
+            self._conversation_history.append(assistant_msg)
+
+            # Process tool calls
+            if message.tool_calls:
+                for tc in message.tool_calls:
+                    input_data: dict[str, Any] = json.loads(tc.function.arguments)  # type: ignore[union-attr]
+                    action = self._execute_tool(tc.function.name, input_data)  # type: ignore[union-attr]
                     actions.append(action)
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
+
+                    # Add tool result to conversation
+                    self._conversation_history.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
                         "content": f"Success: {action['type']} - {action.get('name', '')}",
                     })
 
-            self._conversation_history.append({
-                "role": "assistant",
-                "content": assistant_content,
-            })
-
-            # If there were tool uses, send results back and check for more
-            if tool_results:
-                self._conversation_history.append({
-                    "role": "user",
-                    "content": tool_results,
-                })
-
                 # Check if the model wants to continue
-                if response.stop_reason == "tool_use":
+                if choice.finish_reason == "tool_calls":
                     continuation = await self._continue_generation()
                     actions.extend(continuation)
 
-        except anthropic.APIError as e:
-            logger.error("Claude API error: %s", e)
+        except openai.APIError as e:
+            logger.error("OpenAI API error: %s", e)
             actions.append({
                 "type": "error",
                 "data": {"message": f"AI service error: {e}"},
@@ -132,52 +133,56 @@ class LLMService:
         actions: list[dict[str, Any]] = []
 
         try:
-            response = self._client.messages.create(
+            messages: list[dict[str, Any]] = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                *self._conversation_history,
+            ]
+
+            response = self._client.chat.completions.create(
                 model=config.llm.model,
                 max_tokens=config.llm.max_tokens,
                 temperature=config.llm.temperature,
-                system=SYSTEM_PROMPT,
                 tools=TOOL_DEFINITIONS,  # type: ignore[arg-type]
-                messages=self._conversation_history,  # type: ignore[arg-type]
+                messages=messages,  # type: ignore[arg-type]
             )
 
-            assistant_content: list[dict[str, Any]] = []
-            tool_results: list[dict[str, Any]] = []
+            choice = response.choices[0]
+            message = choice.message
 
-            for block in response.content:
-                if block.type == "text":
-                    assistant_content.append({"type": "text", "text": block.text})
-                elif block.type == "tool_use":
-                    assistant_content.append({
-                        "type": "tool_use",
-                        "id": block.id,
-                        "name": block.name,
-                        "input": block.input,
-                    })
-                    action = self._execute_tool(block.name, block.input)
+            assistant_msg: dict[str, Any] = {"role": "assistant", "content": message.content}
+            if message.tool_calls:
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,  # type: ignore[union-attr]
+                            "arguments": tc.function.arguments,  # type: ignore[union-attr]
+                        },
+                    }
+                    for tc in message.tool_calls
+                ]
+
+            self._conversation_history.append(assistant_msg)
+
+            if message.tool_calls:
+                for tc in message.tool_calls:
+                    input_data: dict[str, Any] = json.loads(tc.function.arguments)  # type: ignore[union-attr]
+                    action = self._execute_tool(tc.function.name, input_data)  # type: ignore[union-attr]
                     actions.append(action)
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
+
+                    self._conversation_history.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
                         "content": f"Success: {action['type']} - {action.get('name', '')}",
                     })
 
-            self._conversation_history.append({
-                "role": "assistant",
-                "content": assistant_content,
-            })
-
-            if tool_results:
-                self._conversation_history.append({
-                    "role": "user",
-                    "content": tool_results,
-                })
-                if response.stop_reason == "tool_use":
+                if choice.finish_reason == "tool_calls":
                     continuation = await self._continue_generation(depth + 1)
                     actions.extend(continuation)
 
-        except anthropic.APIError as e:
-            logger.error("Claude API continuation error: %s", e)
+        except openai.APIError as e:
+            logger.error("OpenAI API continuation error: %s", e)
 
         return actions
 

@@ -11,15 +11,15 @@ from typing import Literal
 class LLMConfig:
     """Configuration for the LLM service."""
 
-    provider: Literal["anthropic"] = "anthropic"
-    model: str = "claude-sonnet-4-20250514"
+    provider: Literal["openai"] = "openai"
+    model: str = "gpt-4o"
     max_tokens: int = 4096
     temperature: float = 0.7
-    api_key: str = field(default_factory=lambda: os.environ.get("ANTHROPIC_API_KEY", ""))
+    api_key: str = field(default_factory=lambda: os.environ.get("OPENAI_API_KEY", ""))
 
     def __post_init__(self) -> None:
         if not self.api_key:
-            self.api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            self.api_key = os.environ.get("OPENAI_API_KEY", "")
 
 
 @dataclass
@@ -59,7 +59,7 @@ class AppConfig:
         """Create config from environment variables."""
         return cls(
             llm=LLMConfig(
-                model=os.environ.get("LLM_MODEL", "claude-sonnet-4-20250514"),
+                model=os.environ.get("LLM_MODEL", "gpt-4o"),
                 max_tokens=int(os.environ.get("LLM_MAX_TOKENS", "4096")),
                 temperature=float(os.environ.get("LLM_TEMPERATURE", "0.7")),
             ),
