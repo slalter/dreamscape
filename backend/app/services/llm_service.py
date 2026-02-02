@@ -160,14 +160,19 @@ class LLMService:
                     actions.append(action)
 
                     # Add tool result to conversation
+                    if action["type"] == "error":
+                        tool_content = f"ERROR: {action['data'].get('message', 'Unknown error')}. Please fix the code and try again."
+                    else:
+                        tool_content = f"Success: {action['type']} - {action.get('name', '')}"
                     self._conversation_history.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
-                        "content": f"Success: {action['type']} - {action.get('name', '')}",
+                        "content": tool_content,
                     })
 
-                # Check if the model wants to continue
-                if choice.finish_reason == "tool_calls":
+                # Continue if model wants more calls OR if there was an error (for retry)
+                has_errors = any(a["type"] == "error" for a in actions)
+                if choice.finish_reason == "tool_calls" or has_errors:
                     continuation = await self._continue_generation()
                     actions.extend(continuation)
 
@@ -230,13 +235,18 @@ class LLMService:
                     action = self._execute_tool(tc.function.name, input_data)  # type: ignore[union-attr]
                     actions.append(action)
 
+                    if action["type"] == "error":
+                        tool_content = f"ERROR: {action['data'].get('message', 'Unknown error')}. Please fix the code and try again."
+                    else:
+                        tool_content = f"Success: {action['type']} - {action.get('name', '')}"
                     self._conversation_history.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
-                        "content": f"Success: {action['type']} - {action.get('name', '')}",
+                        "content": tool_content,
                     })
 
-                if choice.finish_reason == "tool_calls":
+                has_errors = any(a["type"] == "error" for a in actions)
+                if choice.finish_reason == "tool_calls" or has_errors:
                     continuation = await self._continue_generation(depth + 1)
                     actions.extend(continuation)
 
