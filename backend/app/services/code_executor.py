@@ -60,6 +60,8 @@ def execute_model_code(code: str) -> dict[str, Any]:
         "save_model_stl": save_model_stl,
     }
 
+    logger.info("Executing model code:\n%s", code)
+
     try:
         import trimesh  # type: ignore[import-untyped]
         import numpy as np
