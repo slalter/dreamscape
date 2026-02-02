@@ -46,7 +46,16 @@ Write Python code using trimesh + PIL to generate hyper-realistic 3D models with
 
 Object naming: Use descriptive snake_case names like 'tall_pine_1', 'mossy_boulder', 'red_barn'.
 
-Position guide: The user starts at (0, 1.6, 0). Y=0 is ground level. Spread objects naturally in the XZ plane."""
+## Scale & Position Reference (1 unit = 1 meter)
+- The user/camera is at (0, 1.6, 0). Y=0 is ground level. Y=1.6 is eye height.
+- A person is ~1.8m tall. A chair seat is ~0.45m high. A dining table is ~0.75m tall, ~1.2m long.
+- A door is ~2.1m tall, ~0.9m wide. A car is ~4.5m long, ~1.5m tall.
+- A tree is 3-15m tall (trunk radius 0.15-0.5m). A house is ~6-10m wide, ~5-8m tall.
+- A small rock is ~0.3m, a boulder is ~1-2m. A flower is ~0.3m tall.
+- BUILD MODELS AT REAL-WORLD SCALE in the mesh geometry itself (in meters).
+- The `position` field places the model's origin in world space. Y=0 means the base sits on the ground.
+- The `scale` field defaults to {x:1, y:1, z:1} — leave it at 1 if the mesh is already at correct scale.
+- Place objects near the user (within 5-20m on XZ) so they're visible. Spread scenes across XZ naturally."""
 
 
 # Pricing per million tokens (GPT-5.1)
