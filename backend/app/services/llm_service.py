@@ -26,7 +26,9 @@ Your role:
 
 ## CRITICAL: Building High-Quality Objects
 
-You MUST build objects by composing multiple primitive shapes using the **children** array. NEVER try to represent a complex object with a single primitive — it will look terrible.
+You MUST build objects by composing multiple primitive shapes using the **children** array. NEVER create an object with ZERO children — a single primitive looks terrible. Even a simple table needs a box for the top and 4 cylinder children for legs. EVERY create_object call MUST include children.
+
+If you cannot compose an object well with primitives, use generate_3d_model instead.
 
 ### How to build creatures and complex objects:
 
@@ -70,9 +72,9 @@ For the BEST quality objects (realistic creatures, detailed vehicles, organic sh
 - PBR texture maps generated with PIL/Pillow for photorealistic materials
 - Proper UV mapping for detailed surface patterns
 
-Use `generate_3d_model` when the user asks for creatures, characters, vehicles, or anything
-that needs to look realistic. Use `create_object` for simpler scene elements (buildings,
-trees, rocks, terrain features) where composed primitives are sufficient.
+PREFER `generate_3d_model` for ALL objects that need to look good — creatures, furniture,
+vehicles, characters, plants, food, etc. Only use `create_object` for very simple scene
+filler (generic rocks, walls, fences) where exact appearance doesn't matter.
 
 ### General Guidelines:
 - ALWAYS use the narrate tool to describe what you're creating
@@ -288,7 +290,11 @@ class LLMService:
 
     def _execute_tool(self, name: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Execute a tool call and return the action."""
+        logger.info("Tool call: %s, data keys: %s", name, list(input_data.keys()))
         if name == "create_object":
+            logger.info("create_object: name=%s, geometry=%s, children=%d",
+                        input_data.get("name"), input_data.get("geometry", {}).get("type"),
+                        len(input_data.get("children", [])))
             obj = self._world_state.create_object(input_data)
             return {
                 "type": "object_created",
