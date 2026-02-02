@@ -155,6 +155,7 @@ class MessageType(str, Enum):
     STATUS = "status"
     ERROR = "error"
     WORLD_STATE = "world_state"
+    MODEL_UPLOADED = "model_uploaded"
 
 
 class WSMessage(BaseModel):

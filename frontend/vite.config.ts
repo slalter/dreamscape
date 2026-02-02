@@ -8,6 +8,10 @@ export default defineConfig({
         target: 'ws://backend:8000',
         ws: true,
       },
+      '/models': {
+        target: 'http://backend:8000',
+        changeOrigin: true,
+      },
     },
   },
 });

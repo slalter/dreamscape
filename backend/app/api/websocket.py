@@ -70,12 +70,15 @@ class Session:
 
         self._processing = True
         try:
-            await self.send(MessageType.STATUS, {"message": "Imagining..."})
+            await self.send(MessageType.STATUS, {"message": "Imagining your world..."})
 
             self.world_state.increment_turn()
             actions = await self.llm_service.process_user_input(text)
 
-            for action in actions:
+            if actions:
+                await self.send(MessageType.STATUS, {"message": f"Building {len(actions)} elements..."})
+
+            for i, action in enumerate(actions):
                 action_type = action.get("type", "")
                 action_data = action.get("data", {})
 
@@ -91,13 +94,19 @@ class Session:
                     await self.send(MessageType.TERRAIN_CREATED, action_data)
                 elif action_type == "narration":
                     await self.send(MessageType.NARRATION, action_data)
+                elif action_type == "model_uploaded":
+                    await self.send(MessageType.MODEL_UPLOADED, action_data)
                 elif action_type == "error":
                     await self.send(MessageType.ERROR, action_data)
 
                 # Small delay between actions for visual effect
                 await asyncio.sleep(0.1)
 
-            await self.send(MessageType.STATUS, {"message": "Ready"})
+            cost = self.llm_service.cost_tracker.summary()
+            await self.send(MessageType.STATUS, {
+                "message": "Ready",
+                "cost": cost,
+            })
 
         except Exception as e:
             logger.exception("Error processing input")

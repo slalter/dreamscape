@@ -75,6 +75,15 @@ canvas {
   50% { opacity: 0.5; }
 }
 
+#cost-display {
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.2);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
 #help-text {
   font-size: 11px;
   color: rgba(255,255,255,0.4);

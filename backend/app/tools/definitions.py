@@ -305,6 +305,106 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "generate_3d_model",
+            "description": (
+                "Generate a high-quality 3D model by writing Python code that uses the 'trimesh' library. "
+                "This is the PREFERRED method for creating detailed creatures, characters, vehicles, and "
+                "complex objects that cannot be well-represented by composing simple primitives.\n\n"
+                "Available in the execution environment:\n"
+                "- `trimesh` - Full trimesh library for 3D mesh creation\n"
+                "- `np` / `numpy` - NumPy for numerical operations\n"
+                "- `save_model(mesh, name)` - Save a trimesh mesh as GLB file, returns the URL\n"
+                "- `save_model_stl(mesh, name)` - Save as STL file, returns the URL\n\n"
+                "Example for a turtle:\n"
+                "```python\n"
+                "import trimesh\n"
+                "import numpy as np\n\n"
+                "# Create shell (flattened sphere)\n"
+                "shell = trimesh.creation.icosphere(subdivisions=3, radius=1.0)\n"
+                "shell.vertices[:, 1] *= 0.4  # flatten\n"
+                "shell.vertices[:, 1] += 0.3\n"
+                "shell.visual.face_colors = [34, 120, 50, 255]  # dark green\n\n"
+                "# Create body/belly\n"
+                "belly = trimesh.creation.icosphere(subdivisions=3, radius=0.9)\n"
+                "belly.vertices[:, 1] *= 0.25\n"
+                "belly.visual.face_colors = [140, 180, 80, 255]\n\n"
+                "# Head\n"
+                "head = trimesh.creation.icosphere(subdivisions=2, radius=0.3)\n"
+                "head.apply_translation([0.9, 0.2, 0])\n"
+                "head.visual.face_colors = [100, 160, 60, 255]\n\n"
+                "# Combine all parts\n"
+                "turtle = trimesh.util.concatenate([shell, belly, head])\n"
+                "save_model(turtle, 'turtle')\n"
+                "```\n\n"
+                "IMPORTANT: Always call save_model() or save_model_stl() at the end to make the model available. "
+                "Use trimesh.creation functions (icosphere, cylinder, cone, box, etc.) and boolean operations "
+                "for complex shapes.\n\n"
+                "## Coloring and Texturing:\n"
+                "- Simple: Set `mesh.visual.face_colors = [R, G, B, A]` (0-255 range) for uniform color\n"
+                "- Per-face: Set `mesh.visual.face_colors = np.array([[R,G,B,A], ...])` with one color per face\n"
+                "- Textured: Create a PIL Image, then apply as texture:\n"
+                "```python\n"
+                "from PIL import Image, ImageDraw\n"
+                "import trimesh\n"
+                "# Create a texture image\n"
+                "img = Image.new('RGB', (512, 512), (34, 120, 50))\n"
+                "draw = ImageDraw.Draw(img)\n"
+                "# Draw patterns, scales, spots, etc.\n"
+                "for i in range(0, 512, 32):\n"
+                "    draw.line([(i, 0), (i, 512)], fill=(20, 80, 30), width=2)\n"
+                "# Apply to mesh with UV mapping\n"
+                "material = trimesh.visual.material.PBRMaterial(\n"
+                "    baseColorTexture=img,\n"
+                "    metallicFactor=0.0,\n"
+                "    roughnessFactor=0.8\n"
+                ")\n"
+                "mesh.visual = trimesh.visual.TextureVisuals(material=material)\n"
+                "```\n"
+                "Also available: `Image`, `ImageDraw`, `ImageFilter` from PIL, and `scipy` for advanced operations."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["code", "object_name"],
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "Python code using trimesh to generate the 3D model. Must call save_model() at the end.",
+                    },
+                    "object_name": {
+                        "type": "string",
+                        "description": "Name for the object in the scene (snake_case)",
+                    },
+                    "position": {
+                        "type": "object",
+                        "properties": {
+                            "x": {"type": "number"},
+                            "y": {"type": "number"},
+                            "z": {"type": "number"},
+                        },
+                    },
+                    "scale": {
+                        "type": "object",
+                        "properties": {
+                            "x": {"type": "number"},
+                            "y": {"type": "number"},
+                            "z": {"type": "number"},
+                        },
+                    },
+                    "rotation": {
+                        "type": "object",
+                        "properties": {
+                            "x": {"type": "number"},
+                            "y": {"type": "number"},
+                            "z": {"type": "number"},
+                        },
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "narrate",
             "description": (
                 "Send narrative text to the user describing what's happening in the world. "

@@ -12,9 +12,7 @@ class LLMConfig:
     """Configuration for the LLM service."""
 
     provider: Literal["openai"] = "openai"
-    model: str = "gpt-4o"
-    max_tokens: int = 4096
-    temperature: float = 0.7
+    model: str = "gpt-5.1"
     api_key: str = field(default_factory=lambda: os.environ.get("OPENAI_API_KEY", ""))
 
     def __post_init__(self) -> None:
@@ -59,9 +57,7 @@ class AppConfig:
         """Create config from environment variables."""
         return cls(
             llm=LLMConfig(
-                model=os.environ.get("LLM_MODEL", "gpt-4o"),
-                max_tokens=int(os.environ.get("LLM_MAX_TOKENS", "4096")),
-                temperature=float(os.environ.get("LLM_TEMPERATURE", "0.7")),
+                model=os.environ.get("LLM_MODEL", "gpt-5.1"),
             ),
             world=WorldConfig(
                 max_objects=int(os.environ.get("MAX_OBJECTS", "200")),

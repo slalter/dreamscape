@@ -4,11 +4,14 @@
  */
 
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import type {
   WorldObject,
   EnvironmentSettings,
   TerrainParams,
   AnimationParams,
+  ModelUploadData,
   Vec3,
 } from '../types/world';
 
@@ -31,6 +34,10 @@ export class SceneManager {
   private moveState = { forward: false, backward: false, left: false, right: false };
   private mouseState = { isLocked: false, yaw: 0, pitch: 0 };
   private readonly moveSpeed = 8;
+
+  // Pre-allocated objects for the render loop to avoid GC pressure
+  private readonly _euler = new THREE.Euler(0, 0, 0, 'YXZ');
+  private readonly _direction = new THREE.Vector3();
 
   constructor(container: HTMLElement) {
     this.clock = new THREE.Clock();
@@ -148,23 +155,23 @@ export class SceneManager {
     const delta = this.clock.getDelta();
     const elapsed = this.clock.getElapsedTime();
 
-    // Camera rotation
-    const euler = new THREE.Euler(this.mouseState.pitch, this.mouseState.yaw, 0, 'YXZ');
-    this.camera.quaternion.setFromEuler(euler);
+    // Camera rotation — reuse pre-allocated euler
+    this._euler.set(this.mouseState.pitch, this.mouseState.yaw, 0);
+    this.camera.quaternion.setFromEuler(this._euler);
 
-    // Movement
-    const direction = new THREE.Vector3();
-    if (this.moveState.forward) direction.z -= 1;
-    if (this.moveState.backward) direction.z += 1;
-    if (this.moveState.left) direction.x -= 1;
-    if (this.moveState.right) direction.x += 1;
+    // Movement — reuse pre-allocated direction vector
+    this._direction.set(0, 0, 0);
+    if (this.moveState.forward) this._direction.z -= 1;
+    if (this.moveState.backward) this._direction.z += 1;
+    if (this.moveState.left) this._direction.x -= 1;
+    if (this.moveState.right) this._direction.x += 1;
 
-    if (direction.lengthSq() > 0) {
-      direction.normalize();
-      direction.applyQuaternion(this.camera.quaternion);
-      direction.y = 0; // Keep on ground
-      direction.normalize();
-      this.camera.position.addScaledVector(direction, this.moveSpeed * delta);
+    if (this._direction.lengthSq() > 0) {
+      this._direction.normalize();
+      this._direction.applyQuaternion(this.camera.quaternion);
+      this._direction.y = 0; // Keep on ground
+      this._direction.normalize();
+      this.camera.position.addScaledVector(this._direction, this.moveSpeed * delta);
     }
 
     // Animate objects
@@ -196,12 +203,19 @@ export class SceneManager {
   }
 
   addObject(data: WorldObject): void {
-    const group = this.createMeshFromData(data);
+    // Remove existing object with same name to prevent duplicates
+    if (this.objects.has(data.name)) {
+      this.removeObject(data.name);
+    }
+
+    const group = new THREE.Group();
+    const mainMesh = this.createMeshFromData(data);
+    this.enableShadows(mainMesh);
+    group.add(mainMesh);
+
     group.position.set(data.position.x, data.position.y, data.position.z);
     group.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z);
     group.scale.set(data.scale.x, data.scale.y, data.scale.z);
-    group.castShadow = true;
-    group.receiveShadow = true;
 
     this.scene.add(group);
     this.objects.set(data.name, group);
@@ -218,11 +232,10 @@ export class SceneManager {
     // Add children
     for (const child of data.children) {
       const childMesh = this.createMeshFromData(child);
+      this.enableShadows(childMesh);
       childMesh.position.set(child.position.x, child.position.y, child.position.z);
       childMesh.rotation.set(child.rotation.x, child.rotation.y, child.rotation.z);
       childMesh.scale.set(child.scale.x, child.scale.y, child.scale.z);
-      childMesh.castShadow = true;
-      childMesh.receiveShadow = true;
       group.add(childMesh);
 
       if (child.animation.type !== 'none') {
@@ -234,6 +247,21 @@ export class SceneManager {
         });
       }
     }
+  }
+
+  private enableShadows(obj: THREE.Object3D): void {
+    obj.castShadow = true;
+    obj.receiveShadow = true;
+    if (obj instanceof THREE.Mesh) {
+      obj.castShadow = true;
+      obj.receiveShadow = true;
+    }
+    obj.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
   }
 
   private createMeshFromData(data: WorldObject): THREE.Mesh {
@@ -342,15 +370,29 @@ export class SceneManager {
     existing.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z);
     existing.scale.set(data.scale.x, data.scale.y, data.scale.z);
 
-    if (existing instanceof THREE.Mesh) {
-      const newMat = this.createMaterial(data.material);
-      existing.material = newMat;
-    }
+    // Update material on the first mesh child in the group
+    existing.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        const newMat = this.createMaterial(data.material);
+        child.material = newMat;
+      }
+    });
   }
 
   removeObject(name: string): void {
     const obj = this.objects.get(name);
     if (obj) {
+      // Dispose geometry and materials to prevent memory leaks
+      obj.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.geometry.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach((m) => m.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      });
       this.scene.remove(obj);
       this.objects.delete(name);
       this.animatedObjects = this.animatedObjects.filter((a) => a.mesh !== obj);
@@ -384,6 +426,60 @@ export class SceneManager {
       settings.sun_position.y,
       settings.sun_position.z
     );
+  }
+
+  loadModel(data: ModelUploadData): void {
+    // Remove existing object with same name
+    if (this.objects.has(data.name)) {
+      this.removeObject(data.name);
+    }
+
+    const url = data.url;
+    const isSTL = url.toLowerCase().endsWith('.stl');
+
+    if (isSTL) {
+      const loader = new STLLoader();
+      loader.load(
+        url,
+        (geometry) => {
+          const material = new THREE.MeshStandardMaterial({
+            color: 0x888888,
+            roughness: 0.5,
+            metalness: 0.1,
+          });
+          const mesh = new THREE.Mesh(geometry, material);
+          this.enableShadows(mesh);
+          mesh.position.set(data.position.x, data.position.y, data.position.z);
+          mesh.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z);
+          mesh.scale.set(data.scale.x, data.scale.y, data.scale.z);
+          this.scene.add(mesh);
+          this.objects.set(data.name, mesh);
+        },
+        undefined,
+        (error) => {
+          console.error(`[SceneManager] Failed to load STL model: ${url}`, error);
+        }
+      );
+    } else {
+      // GLB/GLTF
+      const loader = new GLTFLoader();
+      loader.load(
+        url,
+        (gltf) => {
+          const model = gltf.scene;
+          this.enableShadows(model);
+          model.position.set(data.position.x, data.position.y, data.position.z);
+          model.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z);
+          model.scale.set(data.scale.x, data.scale.y, data.scale.z);
+          this.scene.add(model);
+          this.objects.set(data.name, model);
+        },
+        undefined,
+        (error) => {
+          console.error(`[SceneManager] Failed to load GLB model: ${url}`, error);
+        }
+      );
+    }
   }
 
   addTerrain(params: TerrainParams): void {

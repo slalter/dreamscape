@@ -6,7 +6,7 @@
 import { SceneManager } from './engine/SceneManager';
 import { WebSocketClient } from './engine/WebSocketClient';
 import { UI } from './ui/UI';
-import type { WorldObject, EnvironmentSettings, TerrainParams } from './types/world';
+import type { WorldObject, EnvironmentSettings, TerrainParams, ModelUploadData } from './types/world';
 
 function generateSessionId(): string {
   return `session_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
@@ -63,6 +63,12 @@ function main(): void {
     ui.addLog(`Terrain created: ${terrain.type}`);
   });
 
+  wsClient.on('model_uploaded', (data) => {
+    const modelData = data as unknown as ModelUploadData;
+    sceneManager.loadModel(modelData);
+    ui.addLog(`Loaded 3D model: ${modelData.name}`);
+  });
+
   wsClient.on('narration', (data) => {
     const text = (data as { text: string }).text;
     ui.showNarration(text);
@@ -70,7 +76,11 @@ function main(): void {
 
   wsClient.on('status', (data) => {
     const message = (data as { message: string }).message;
+    const cost = (data as { cost?: { total_cost_usd: number; total_requests: number } }).cost;
     ui.setStatus(message);
+    if (cost) {
+      ui.updateCost(cost.total_cost_usd, cost.total_requests);
+    }
   });
 
   wsClient.on('error', (data) => {

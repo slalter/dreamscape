@@ -9,6 +9,10 @@ dependencies = [
     "openai>=1.50.0",
     "pydantic>=2.10.0",
     "websockets>=14.0",
+    "trimesh[easy]>=4.0.0",
+    "numpy>=1.26.0",
+    "Pillow>=10.0.0",
+    "scipy>=1.12.0",
 ]
 
 [project.optional-dependencies]
