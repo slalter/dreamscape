@@ -79,6 +79,28 @@ def execute_model_code(code: str) -> dict[str, Any]:
         except ImportError:
             pass
 
+        # Pre-define helper functions that the LLM's code expects
+        def make_texture(base_color: tuple, detail_func: Any = None, size: int = 512) -> Any:  # type: ignore[type-arg]
+            """Create a procedural texture image."""
+            img = Image.new("RGB", (size, size), base_color)
+            draw = ImageDraw.Draw(img)
+            if detail_func:
+                detail_func(draw, size)
+            img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
+            return img
+
+        def apply_skin(mesh: Any, texture_img: Any, roughness: float = 0.5, metallic: float = 0.0) -> None:
+            """Apply a PBR textured skin to a mesh."""
+            mat = trimesh.visual.material.PBRMaterial(
+                baseColorTexture=texture_img,
+                roughnessFactor=roughness,
+                metallicFactor=metallic,
+            )
+            mesh.visual = trimesh.visual.TextureVisuals(material=mat)
+
+        exec_globals["make_texture"] = make_texture
+        exec_globals["apply_skin"] = apply_skin
+
         # Make scipy available for advanced mesh operations
         try:
             import scipy  # type: ignore[import-untyped]
