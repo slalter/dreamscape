@@ -1,13 +1,12 @@
-"""Sandboxed Python code execution for 3D model generation.
+"""Persistent IPython environment for 3D model generation.
 
-Allows the LLM to write Python code that uses trimesh to generate
-3D models, which are saved as GLB files and served to the frontend.
+Maintains a long-lived IPython shell so the LLM can define functions,
+build on previous code, and reuse variables across executions.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 import tempfile
 import traceback
 import uuid
@@ -20,110 +19,144 @@ logger = logging.getLogger(__name__)
 MODELS_DIR = Path(tempfile.gettempdir()) / "dreamscape_models"
 MODELS_DIR.mkdir(exist_ok=True)
 
+# Bootstrap code run once when the IPython shell is created
+_BOOTSTRAP_CODE = (
+    "import trimesh\n"
+    "import numpy as np\n"
+    "import numpy\n"
+    "from PIL import Image, ImageDraw, ImageFilter\n"
+    "\n"
+    "try:\n"
+    "    import scipy\n"
+    "except ImportError:\n"
+    "    pass\n"
+    "\n"
+    "def make_texture(base_color, detail_func=None, size=512):\n"
+    "    img = Image.new('RGB', (size, size), base_color)\n"
+    "    draw = ImageDraw.Draw(img)\n"
+    "    if detail_func:\n"
+    "        detail_func(draw, size)\n"
+    "    img = img.filter(ImageFilter.GaussianBlur(radius=0.5))\n"
+    "    return img\n"
+    "\n"
+    "def apply_skin(mesh, texture_img, roughness=0.5, metallic=0.0):\n"
+    "    mat = trimesh.visual.material.PBRMaterial(\n"
+    "        baseColorTexture=texture_img,\n"
+    "        roughnessFactor=roughness,\n"
+    "        metallicFactor=metallic,\n"
+    "    )\n"
+    "    mesh.visual = trimesh.visual.TextureVisuals(material=mat)\n"
+)
 
-def execute_model_code(code: str) -> dict[str, Any]:
-    """Execute Python code for 3D model generation.
 
-    The code has access to trimesh, numpy, and a special `save_model(mesh, name)`
-    function that exports the mesh as GLB and returns the URL.
+class PersistentExecutor:
+    """Wraps an IPython InteractiveShell for persistent code execution."""
 
-    Returns a dict with 'success', 'files' (list of generated file info), and 'error'.
-    """
-    generated_files: list[dict[str, str]] = []
+    def __init__(self) -> None:
+        self._shell: Any = None
+        self._generated_files: list[dict[str, str]] = []
 
-    def save_model(mesh: Any, name: str = "model") -> str:
+    def _ensure_shell(self) -> Any:
+        """Lazily create and bootstrap the IPython shell."""
+        if self._shell is not None:
+            return self._shell
+
+        from IPython.core.interactiveshell import InteractiveShell  # type: ignore[import-untyped]
+
+        self._shell = InteractiveShell.instance()
+
+        # Inject save_model into the shell's namespace
+        self._shell.user_ns["save_model"] = self._save_model
+        self._shell.user_ns["save_model_stl"] = self._save_model_stl
+
+        # Run bootstrap (imports + helpers)
+        result = self._shell.run_cell(_BOOTSTRAP_CODE, silent=True)
+        if result.error_in_exec:
+            logger.error("Bootstrap failed: %s", result.error_in_exec)
+
+        logger.info("IPython persistent shell initialized")
+        return self._shell
+
+    def _save_model(self, mesh: Any, name: str = "model") -> str:
         """Save a trimesh mesh as GLB and return the relative URL path."""
         file_id = str(uuid.uuid4())[:8]
         filename = f"{name}_{file_id}.glb"
         filepath = MODELS_DIR / filename
         mesh.export(str(filepath), file_type="glb")
         url = f"/models/{filename}"
-        generated_files.append({"name": name, "filename": filename, "url": url})
+        self._generated_files.append({"name": name, "filename": filename, "url": url})
         logger.info("Generated model: %s -> %s", name, filepath)
         return url
 
-    def save_model_stl(mesh: Any, name: str = "model") -> str:
+    def _save_model_stl(self, mesh: Any, name: str = "model") -> str:
         """Save a trimesh mesh as STL and return the relative URL path."""
         file_id = str(uuid.uuid4())[:8]
         filename = f"{name}_{file_id}.stl"
         filepath = MODELS_DIR / filename
         mesh.export(str(filepath), file_type="stl")
         url = f"/models/{filename}"
-        generated_files.append({"name": name, "filename": filename, "url": url})
+        self._generated_files.append({"name": name, "filename": filename, "url": url})
         logger.info("Generated STL model: %s -> %s", name, filepath)
         return url
 
-    # Build execution namespace with allowed imports
-    exec_globals: dict[str, Any] = {
-        "__builtins__": __builtins__,
-        "save_model": save_model,
-        "save_model_stl": save_model_stl,
-    }
+    def execute(self, code: str) -> dict[str, Any]:
+        """Execute code in the persistent IPython shell.
 
-    logger.info("Executing model code:\n%s", code)
+        Returns a dict with 'success', 'files', and 'error'.
+        """
+        shell = self._ensure_shell()
 
-    try:
-        import trimesh  # type: ignore[import-untyped]
-        import numpy as np
+        # Reset per-execution file list
+        self._generated_files = []
 
-        exec_globals["trimesh"] = trimesh
-        exec_globals["np"] = np
-        exec_globals["numpy"] = np
+        logger.info("Executing model code:\n%s", code)
 
-        # Make PIL/Pillow available for texture generation
         try:
-            from PIL import Image, ImageDraw, ImageFilter  # type: ignore[import-untyped]
-            exec_globals["Image"] = Image
-            exec_globals["ImageDraw"] = ImageDraw
-            exec_globals["ImageFilter"] = ImageFilter
-        except ImportError:
-            pass
+            result = shell.run_cell(code, silent=True)
 
-        # Pre-define helper functions that the LLM's code expects
-        def make_texture(base_color: tuple, detail_func: Any = None, size: int = 512) -> Any:  # type: ignore[type-arg]
-            """Create a procedural texture image."""
-            img = Image.new("RGB", (size, size), base_color)
-            draw = ImageDraw.Draw(img)
-            if detail_func:
-                detail_func(draw, size)
-            img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
-            return img
+            if result.error_in_exec:
+                error_msg = f"{type(result.error_in_exec).__name__}: {result.error_in_exec}"
+                logger.error("Code execution failed: %s", error_msg)
+                return {
+                    "success": False,
+                    "files": self._generated_files,
+                    "error": error_msg,
+                }
 
-        def apply_skin(mesh: Any, texture_img: Any, roughness: float = 0.5, metallic: float = 0.0) -> None:
-            """Apply a PBR textured skin to a mesh."""
-            mat = trimesh.visual.material.PBRMaterial(
-                baseColorTexture=texture_img,
-                roughnessFactor=roughness,
-                metallicFactor=metallic,
-            )
-            mesh.visual = trimesh.visual.TextureVisuals(material=mat)
+            return {
+                "success": True,
+                "files": self._generated_files,
+                "error": None,
+            }
 
-        exec_globals["make_texture"] = make_texture
-        exec_globals["apply_skin"] = apply_skin
+        except Exception as e:
+            error_msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+            logger.error("Code execution failed: %s", error_msg)
+            return {
+                "success": False,
+                "files": self._generated_files,
+                "error": error_msg,
+            }
 
-        # Make scipy available for advanced mesh operations
-        try:
-            import scipy  # type: ignore[import-untyped]
-            exec_globals["scipy"] = scipy
-        except ImportError:
-            pass
+    def reset(self) -> None:
+        """Reset the shell (re-bootstrap on next use)."""
+        self._shell = None
+        self._generated_files = []
+        logger.info("IPython shell reset")
 
-        exec(code, exec_globals)  # noqa: S102
 
-        return {
-            "success": True,
-            "files": generated_files,
-            "error": None,
-        }
+# Module-level singleton
+_executor = PersistentExecutor()
 
-    except Exception as e:
-        error_msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
-        logger.error("Code execution failed: %s", error_msg)
-        return {
-            "success": False,
-            "files": generated_files,
-            "error": error_msg,
-        }
+
+def execute_model_code(code: str) -> dict[str, Any]:
+    """Execute Python code in the persistent IPython environment."""
+    return _executor.execute(code)
+
+
+def reset_executor() -> None:
+    """Reset the persistent executor (e.g. on session reset)."""
+    _executor.reset()
 
 
 def get_model_path(filename: str) -> Path | None:

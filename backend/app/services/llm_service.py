@@ -9,7 +9,7 @@ from typing import Any
 import openai
 
 from app.config import config
-from app.services.code_executor import execute_model_code
+from app.services.code_executor import execute_model_code, reset_executor
 from app.services.world_state import WorldStateManager
 from app.tools.definitions import TOOL_DEFINITIONS
 
@@ -345,5 +345,6 @@ class LLMService:
             return {"type": "error", "data": {"message": f"Unknown tool: {name}"}}
 
     def reset(self) -> None:
-        """Reset conversation history."""
+        """Reset conversation history and code executor."""
         self._conversation_history = []
+        reset_executor()

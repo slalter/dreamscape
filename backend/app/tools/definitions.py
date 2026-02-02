@@ -16,7 +16,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "description": (
                 "Generate a HYPER-REALISTIC 3D model by writing Python code. This is the ONLY way "
                 "to create objects in the scene. You MUST use this tool for every object.\n\n"
-                "Available libraries:\n"
+                "IMPORTANT: The Python environment is PERSISTENT (IPython). Variables, functions, "
+                "and imports from previous calls are still available. You can define reusable helper "
+                "functions once and call them in later invocations. All libraries and helpers below "
+                "are pre-imported and ready to use.\n\n"
+                "Available libraries (pre-imported):\n"
                 "- `trimesh` - 3D mesh creation, boolean operations, transformations\n"
                 "- `np` / `numpy` - numerical operations\n"
                 "- `Image`, `ImageDraw`, `ImageFilter` from PIL - texture/skin generation\n"
