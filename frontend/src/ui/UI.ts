@@ -15,6 +15,7 @@ export class UI {
   private voiceBtnEl: HTMLElement;
   private voiceIndicatorEl: HTMLElement;
   private interimEl: HTMLElement;
+  private costEl: HTMLElement;
   private onSubmit: (text: string) => void;
   private voice: VoiceInput;
   private pendingVoiceText = '';
@@ -30,6 +31,7 @@ export class UI {
       <div id="top-bar">
         <div id="status">Connecting...</div>
         <div id="title">DREAMSCAPE</div>
+        <div id="cost-display">$0.0000 (0 requests)</div>
         <div id="help-text">Click to look around | WASD to move | Space to talk</div>
       </div>
       <div id="narrative-panel"></div>
@@ -56,6 +58,7 @@ export class UI {
     this.statusEl = document.getElementById('status') as HTMLElement;
     this.narrativeEl = document.getElementById('narrative-panel') as HTMLElement;
     this.logEl = document.getElementById('log-panel') as HTMLElement;
+    this.costEl = document.getElementById('cost-display') as HTMLElement;
     this.voiceBtnEl = document.getElementById('voice-btn') as HTMLElement;
     this.voiceIndicatorEl = document.getElementById('voice-indicator') as HTMLElement;
     this.interimEl = document.getElementById('interim-text') as HTMLElement;
@@ -208,6 +211,10 @@ export class UI {
     while (this.logEl.children.length > 50) {
       this.logEl.removeChild(this.logEl.firstChild!);
     }
+  }
+
+  updateCost(totalCostUsd: number, totalRequests: number): void {
+    this.costEl.textContent = `$${totalCostUsd.toFixed(4)} (${totalRequests} req)`;
   }
 
   showError(message: string): void {

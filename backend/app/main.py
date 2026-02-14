@@ -6,8 +6,10 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.api.websocket import router as ws_router
 from app.config import config
+from app.services.code_executor import MODELS_DIR
 
 logging.basicConfig(
     level=getattr(logging, config.log_level),
@@ -29,6 +31,10 @@ app.add_middleware(
 )
 
 app.include_router(ws_router)
+
+# Serve generated 3D model files
+MODELS_DIR.mkdir(exist_ok=True)
+app.mount("/models", StaticFiles(directory=str(MODELS_DIR)), name="models")
 
 
 @app.get("/health")

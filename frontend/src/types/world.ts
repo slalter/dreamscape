@@ -98,6 +98,14 @@ export interface TerrainParams {
   seed: number | null;
 }
 
+export interface ModelUploadData {
+  name: string;
+  url: string;
+  position: Vec3;
+  scale: Vec3;
+  rotation: Vec3;
+}
+
 export type MessageType =
   | 'user_input'
   | 'object_created'
@@ -108,7 +116,8 @@ export type MessageType =
   | 'narration'
   | 'status'
   | 'error'
-  | 'world_state';
+  | 'world_state'
+  | 'model_uploaded';
 
 export interface WSMessage {
   type: MessageType;
